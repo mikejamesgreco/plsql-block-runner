@@ -1,7 +1,20 @@
 -- MAIN: <name>
 -- PURPOSE:
+--
+-- IMPORTANT:
+--   This file is a MAIN *anonymous block snippet*.
+--   It is spliced directly into the worker’s outer BEGIN...END block.
+--   Therefore the file must be valid as “executable statements”.
+--   If you need local variables/procedures/functions, wrap them in a nested:
+--     DECLARE ... BEGIN ... END;
+--   Do NOT start the file with a bare DECLARE (unless it is the nested block itself),
+--   and do NOT place standalone PROCEDURE/FUNCTION declarations at top-level.
+--
 -- INPUTS:
+--   l_inputs_json  CLOB  (provided by driver)
+--
 -- OUTPUTS:
+--   l_result_json  CLOB  (set by MAIN)
+--   :v_retcode     OUT NUMBER
+--   :v_errbuf      OUT VARCHAR2
 
-:v_retcode := 0;
-:v_errbuf  := null;

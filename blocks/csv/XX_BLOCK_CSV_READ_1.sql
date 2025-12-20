@@ -1,4 +1,40 @@
--- XX_BLOCK_CSV_READ_1.sql
+-- BLOCK: XX_BLOCK_CSV_READ_1.sql
+-- PURPOSE:
+--   Read a CSV file from an Oracle DIRECTORY using UTL_FILE and load its
+--   contents into global CSV structures for downstream processing.
+--   Each physical line in the file is stored verbatim (no parsing) along
+--   with a logical row number.
+--
+-- DEFINES:
+--   procedure xx_read_csv_into_globals(
+--     p_dir  IN VARCHAR2,
+--     p_file IN VARCHAR2
+--   )
+--
+-- INPUTS:
+--   p_dir   IN VARCHAR2
+--     Oracle DIRECTORY name where the CSV file resides.
+--   p_file  IN VARCHAR2
+--     Filename of the CSV file to read.
+--
+-- OUTPUTS:
+--   None (direct parameters).
+--   Populates the following global state:
+--     - g_csv_rows(...)
+--     - g_csv_count
+--
+-- SIDE EFFECTS:
+--   - Clears and repopulates global CSV buffers.
+--   - Opens and reads a file via UTL_FILE.
+--   - Emits diagnostic log output via xx_log.
+--
+-- ERRORS:
+--   Propagates standard Oracle errors, including but not limited to:
+--     - ORA-29283 (invalid file operation)
+--     - ORA-29280 (invalid directory access)
+--     - ORA-06512 / ORA-06502 (value or buffer errors)
+--   On error, ensures any open file handle is closed before re-raising.
+
 procedure xx_read_csv_into_globals(
   p_dir  in varchar2,
   p_file in varchar2

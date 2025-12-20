@@ -1,4 +1,40 @@
--- XX_BLOCK_CSV_PARSE_1.sql
+-- BLOCK: XX_BLOCK_CSV_PARSE_1.sql
+-- PURPOSE:
+--   Provide CSV parsing helpers for blocks that need to interpret a single CSV
+--   line into fields. This block implements a quote-aware splitter that supports:
+--     - delimiter-separated fields (default comma)
+--     - double-quoted fields
+--     - escaped quotes inside quoted fields using "" (CSV standard)
+--
+-- DEFINES:
+--   function xx_csv_split_line(
+--     p_line  IN VARCHAR2,
+--     p_delim IN VARCHAR2 DEFAULT ','
+--   ) RETURN SYS.ODCIVARCHAR2LIST
+--
+-- INPUTS:
+--   p_line   IN VARCHAR2
+--     A single line of CSV text. May be NULL.
+--   p_delim  IN VARCHAR2 DEFAULT ','
+--     Field delimiter. Only the first character is used.
+--
+-- OUTPUTS:
+--   RETURN SYS.ODCIVARCHAR2LIST
+--     Ordered list of field values extracted from p_line.
+--     Notes:
+--       - If p_line is NULL, returns a 1-element list containing NULL.
+--       - Always returns at least one element (the "last field" logic).
+--
+-- SIDE EFFECTS:
+--   None. Pure function. Does not read/write files, tables, globals, or package state.
+--
+-- ERRORS:
+--   No explicit RAISE_APPLICATION_ERROR calls.
+--   May raise standard Oracle errors in exceptional cases, such as:
+--     - ORA-06502 (numeric/value error) if the line is extremely large and exceeds
+--       local buffer limits (l_buf VARCHAR2(32767)).
+--     - Memory-related errors if an extremely large number of fields are produced.
+
 function xx_csv_split_line(
   p_line  in varchar2,
   p_delim in varchar2 default ','

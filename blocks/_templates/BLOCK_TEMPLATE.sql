@@ -1,5 +1,6 @@
 -- BLOCK: <name>
 -- PURPOSE:
+-- DEFINES:
 -- INPUTS:
 -- OUTPUTS:
 -- SIDE EFFECTS:

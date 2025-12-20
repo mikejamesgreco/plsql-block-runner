@@ -1,5 +1,46 @@
--- XX_BLOCK_ZIP_FINISH_1.sql
--- Defines: xx_block_zip_finish
+-- BLOCK: XX_BLOCK_ZIP_FINISH_1.sql
+-- PURPOSE:
+--   Finalize the in-memory ZIP archive by generating and appending the
+--   Central Directory records for all entries added so far, followed by
+--   the End Of Central Directory (EOCD) record. After this block runs,
+--   g_zip_blob contains a complete, valid ZIP file suitable for writing
+--   to disk or returning to a caller.
+--
+-- DEFINES:
+--   procedure xx_block_zip_finish
+--
+-- INPUTS:
+--   None (direct parameters).
+--   Requires the following global ZIP state (declared/populated by other ZIP blocks):
+--     - g_zip_open        must be TRUE (ZIP_BEGIN was called and ZIP not yet finished)
+--     - g_zip_blob        contains local file headers + file data for entries
+--     - g_zip_cd_blob     temporary BLOB buffer for central directory assembly
+--     - g_zip_entry_count number of entries recorded
+--     - g_zip_entries(...) metadata for each entry (name, crc32, sizes, offsets, timestamps, method)
+--
+-- OUTPUTS:
+--   None (direct parameters).
+--   Updates the following global ZIP state:
+--     - g_zip_cd_blob   appended with Central Directory File Header (CDFH) records
+--     - g_zip_blob      appended with g_zip_cd_blob + EOCD record (final ZIP bytes)
+--     - g_zip_open      set to FALSE (ZIP is closed/finalized)
+--
+-- SIDE EFFECTS:
+--   - Appends binary ZIP directory structures to g_zip_cd_blob and g_zip_blob.
+--   - Emits log output via xx_block_log_info.
+--   - Leaves g_zip_blob containing a finalized ZIP file; no further ZIP_ADD_* calls
+--     should be made unless ZIP_BEGIN is called again.
+--
+-- ERRORS:
+--   - Raises -20001 if ZIP is not open (g_zip_open != TRUE).
+--   - May propagate standard Oracle errors related to LOB operations, RAW conversion,
+--     or memory limits during Central Directory construction and append operations.
+--
+-- NOTES:
+--   - This implementation writes a classic EOCD record (no ZIP64 support).
+--     Very large ZIPs (sizes/offsets beyond 32-bit limits) are not supported.
+--   - Entry names are encoded as UTF-8 bytes (AL32UTF8 via UTL_I18N.STRING_TO_RAW).
+--   - Central Directory offsets and sizes are written in little-endian format.
 
 PROCEDURE xx_block_zip_finish IS
 

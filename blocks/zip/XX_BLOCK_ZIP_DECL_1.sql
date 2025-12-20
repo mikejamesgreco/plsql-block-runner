@@ -1,4 +1,26 @@
-/* ZIP builder shared state (no APEX dependency) */
+-- DECL: XX_BLOCK_ZIP_DECL_1.sql
+-- PURPOSE:
+--   Declare shared state, types, and buffers used by the ZIP builder blocks.
+--   This DECL defines the in-memory ZIP assembly model, including entry metadata,
+--   binary payload buffers, and CRC32 support structures, with no dependency on
+--   APEX or external ZIP utilities.
+--
+-- NOTES:
+--   - This DECL contains only type and variable declarations; no executable
+--     logic should appear here.
+--   - ZIP construction is stateful and driven by the following block sequence:
+--       1) ZIP_BEGIN        – initialize ZIP state and buffers
+--       2) ZIP_SET_ENTRY_*  – define entry name/content
+--       3) ZIP_ADD_*        – append entry data to ZIP
+--       4) ZIP_FINISH       – write central directory and finalize ZIP
+--   - g_zip_blob holds the final ZIP binary once ZIP_FINISH completes.
+--   - g_zip_cd_blob is an internal staging buffer for Central Directory records.
+--   - ZIP entries are tracked in-memory via g_zip_entries to support deferred
+--     Central Directory creation.
+--   - CRC32 state (g_crc_tab / g_crc_tab_init) is cached across entry additions
+--     to avoid recomputing the lookup table for each entry.
+--   - This implementation does not support ZIP64; large archives may exceed
+--     classic ZIP limits.
 
 TYPE t_zip_entry_rec IS RECORD (
   name_utf8      VARCHAR2(4000),

@@ -1,5 +1,54 @@
--- XX_BLOCK_ZIP_ADD_CLOB_1.sql
--- Defines: xx_block_zip_add_clob
+-- BLOCK: XX_BLOCK_ZIP_ADD_CLOB_1.sql
+-- PURPOSE:
+--   Add a single entry to the in-progress ZIP archive using the “stored” method
+--   (no compression). The entry payload is provided as a CLOB (g_zip_entry_clob)
+--   and is converted to a BLOB using the configured character set (g_zip_charset).
+--   This block writes the Local File Header + file data to g_zip_blob and records
+--   entry metadata into g_zip_entries(...) for later central-directory creation
+--   by ZIP_FINISH.
+--
+-- DEFINES:
+--   procedure xx_block_zip_add_clob
+--
+-- INPUTS:
+--   None (direct parameters).
+--   Requires the following global state to be set prior to calling:
+--     - g_zip_open        = TRUE (ZIP_BEGIN must have been called)
+--     - g_zip_entry_name  (name/path of the entry inside the ZIP)
+--     - g_zip_entry_clob  (CLOB payload to store as the entry contents)
+--     - g_zip_charset     (character set used to convert CLOB -> BLOB; default AL32UTF8)
+--
+-- OUTPUTS:
+--   None (direct parameters).
+--   Updates the following global ZIP state (declared in XX_BLOCK_ZIP_DECL_1.sql):
+--     - g_zip_blob         (appends Local File Header + file data)
+--     - g_zip_entry_count  (incremented by 1)
+--     - g_zip_entries(...) (adds a metadata record for the new entry)
+--   Uses (and may initialize) the following global CRC cache:
+--     - g_crc_tab / g_crc_tab_init
+--
+-- SIDE EFFECTS:
+--   - Allocates a temporary BLOB for the converted payload and frees it before exit.
+--   - Appends binary ZIP structures to g_zip_blob (ZIP becomes larger with each call).
+--   - Emits log output via xx_block_log_info / xx_block_log_error.
+--
+-- ERRORS:
+--   - Raises -20001 (via fail) if:
+--       * ZIP is not open (g_zip_open != TRUE)
+--       * g_zip_entry_name is NULL
+--       * g_zip_entry_clob is NULL
+--       * g_zip_charset is invalid (NLS_CHARSET_ID returns 0)
+--   - Propagates standard Oracle errors that may occur during:
+--       * CLOB->BLOB conversion (DBMS_LOB.CONVERTTOBLOB)
+--       * LOB reads/writes (DBMS_LOB.READ/WRITEAPPEND/APPEND)
+--       * RAW/encoding operations (UTL_I18N/UTL_RAW)
+--
+-- NOTES:
+--   - Stored method means comp_size = uncomp_size and method = 0.
+--   - Entry timestamps are recorded in DOS date/time format (2-second resolution).
+--   - Entry name is normalized by stripping leading '/' characters.
+--   - CRC32 is computed over the converted BLOB payload.
+
 
 PROCEDURE xx_block_zip_add_clob IS
   ----------------------------------------------------------------------------

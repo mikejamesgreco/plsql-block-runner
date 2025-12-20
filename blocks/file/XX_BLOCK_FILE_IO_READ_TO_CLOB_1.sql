@@ -1,6 +1,48 @@
--- XX_BLOCK_FILE_IO_READ_TO_CLOB_1.sql
--- Defines: xx_block_file_io_read_to_clob
--- Requires shared vars from XX_BLOCK_FILE_IO_DECL_1.sql and log helpers.
+-- BLOCK: XX_BLOCK_FILE_IO_READ_TO_CLOB_1.sql
+-- PURPOSE:
+--   Read a text file from an Oracle DIRECTORY (UTL_FILE) and load its contents
+--   into a temporary CLOB global (g_file_clob) for downstream processing.
+--   This block is intended as a reusable “file -> CLOB” primitive that other
+--   blocks (ZIP, CSV, JSON, etc.) can build on.
+--
+-- DEFINES:
+--   procedure xx_block_file_io_read_to_clob
+--
+-- INPUTS:
+--   Implicit (via l_inputs_json framework variable):
+--     {
+--       "file": {
+--         "dir":  "<Oracle DIRECTORY name>",
+--         "name": "<filename>"
+--       }
+--     }
+--
+-- OUTPUTS:
+--   None (direct parameters).
+--   Populates / updates the following global state (declared in XX_BLOCK_FILE_IO_DECL_1.sql):
+--     - g_file_dir      (directory name used)
+--     - g_file_name     (filename used)
+--     - g_file_clob     (temporary CLOB containing file contents)
+--     - g_file_lines    (number of lines read)
+--     - g_file_bytes    (approx bytes appended: line length + newline per line)
+--
+-- SIDE EFFECTS:
+--   - Frees and recreates g_file_clob as a temporary CLOB.
+--   - Opens and reads a file using UTL_FILE.
+--   - Emits log output via xx_block_log_info / xx_block_log_error.
+--   - Appends a newline delimiter (g_file_newline) after each line read.
+--
+-- ERRORS:
+--   - Raises -20001 via fail() for input/JSON validation failures (missing/NULL file.dir or file.name).
+--   - Propagates UTL_FILE and other Oracle errors (e.g. ORA-29283, ORA-29280).
+--   - Ensures file handle is closed on exceptions before re-raising.
+--
+-- NOTES:
+--   - This is line-oriented reading using UTL_FILE.GET_LINE (32767 max per line).
+--     If the source file contains lines longer than 32767 characters, UTL_FILE will error.
+--   - g_file_bytes is an approximate counter based on LENGTH(line) + LENGTH(g_file_newline),
+--     not a true filesystem byte count (character set and encoding can affect physical bytes).
+
 
 PROCEDURE xx_block_file_io_read_to_clob IS
   l_root     JSON_OBJECT_T;

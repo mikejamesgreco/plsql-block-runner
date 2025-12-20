@@ -1,3 +1,42 @@
+-- MAIN: XX_BLOCK_MAIN_ZIP_WRITE_FILE_1.sql
+-- PURPOSE:
+--   End-to-end MAIN that:
+--     1) reads an input text file into g_file_clob,
+--     2) maps that content into ZIP entry globals,
+--     3) builds an in-memory ZIP (stored method),
+--     4) writes the resulting ZIP BLOB to disk via UTL_FILE.PUT_RAW,
+--     5) returns a JSON summary (including bytes written and entry count).
+--
+-- IMPORTANT:
+--   This file is a MAIN *anonymous block snippet*.
+--   It is spliced directly into the worker’s outer BEGIN...END block.
+--   Do NOT define a standalone procedure/function here.
+--   Nested DECLARE...BEGIN...END blocks are allowed (this MAIN is a full anonymous block).
+--
+-- INPUTS:
+--   l_inputs_json  CLOB  (provided by the driver; must not be NULL)
+--   Expected shape (minimum):
+--     {
+--       "file": { "dir": "<ORACLE_DIRECTORY>", "name": "<input_filename>" },
+--       "zip":  { "dir": "<ORACLE_DIRECTORY>", "zip_file": "<output_zip_filename>",
+--                 "entry_name": "<optional entry name>", "charset": "<optional charset>" }
+--     }
+--   Notes:
+--     - file.dir + file.name are consumed by xx_block_file_io_read_to_clob.
+--     - zip.entry_name / zip.charset are optionally consumed by ZIP_SET_ENTRY_FROM_FILE.
+--     - zip.dir + zip.zip_file control where the final ZIP is written.
+--
+-- OUTPUTS:
+--   l_result_json  CLOB  (set by MAIN; returned to caller via driver)
+--     JSON summary on success, including:
+--       status, file_dir, file_name, zip_dir, zip_file, zip_bytes, zip_entries
+--   :v_retcode     OUT NUMBER
+--     0 = success
+--     2 = MAIN error
+--   :v_errbuf      OUT VARCHAR2(4000)
+--     NULL on success; short message on failure
+
+
 DECLARE
   l_root     JSON_OBJECT_T;
   l_zip_obj  JSON_OBJECT_T;

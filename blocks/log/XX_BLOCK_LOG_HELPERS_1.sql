@@ -1,7 +1,62 @@
-/* XX_BLOCK_LOG_HELPERS_1.sql
-   Local logging routines for the assembled anonymous worker.
-   Requires XX_BLOCK_LOG_DECL_1.sql to have already run in DECL section.
-*/
+-- BLOCK: XX_BLOCK_LOG_HELPERS_1.sql
+-- PURPOSE:
+--   Provide the logging API used by block-based workers. This block defines
+--   helper functions and procedures that format, filter, and emit log messages
+--   based on configured log level and enablement flags.
+--
+--   These helpers are intended to be used by other BLOCK and MAIN files after
+--   logging globals have been declared via XX_BLOCK_LOG_DECL_1.sql.
+--
+-- DEFINES:
+--   function  xx_block_log_level_name(p_level IN PLS_INTEGER) RETURN VARCHAR2
+--
+--   procedure xx_block_log_log(
+--     p_tag   IN VARCHAR2,
+--     p_msg   IN VARCHAR2,
+--     p_level IN PLS_INTEGER DEFAULT c_log_info
+--   )
+--
+--   procedure xx_block_log_error(p_tag IN VARCHAR2, p_msg IN VARCHAR2)
+--   procedure xx_block_log_warn (p_tag IN VARCHAR2, p_msg IN VARCHAR2)
+--   procedure xx_block_log_info (p_tag IN VARCHAR2, p_msg IN VARCHAR2)
+--   procedure xx_block_log_debug(p_tag IN VARCHAR2, p_msg IN VARCHAR2)
+--
+--   procedure xx_block_log_clob(
+--     p_tag   IN VARCHAR2,
+--     p_msg   IN CLOB,
+--     p_level IN PLS_INTEGER DEFAULT c_log_debug,
+--     p_chunk IN PLS_INTEGER DEFAULT 3000,
+--     p_max   IN PLS_INTEGER DEFAULT 10
+--   )
+--
+-- INPUTS:
+--   Logging behavior is controlled via the following globals
+--   (declared in XX_BLOCK_LOG_DECL_1.sql):
+--     - g_log_enabled   (BOOLEAN)
+--     - g_log_level     (PLS_INTEGER)
+--     - g_log_prefix    (VARCHAR2)
+--
+-- OUTPUTS:
+--   None (direct parameters).
+--   Log output is written to:
+--     - DBMS_OUTPUT
+--     - g_log_lines(...) in-memory buffer
+--
+-- SIDE EFFECTS:
+--   - Writes formatted log lines to DBMS_OUTPUT.
+--   - Appends log lines to the global log buffer (g_log_lines).
+--   - Increments g_log_line_count.
+--
+-- ERRORS:
+--   No explicit error handling.
+--   May raise standard Oracle errors related to DBMS_OUTPUT or LOB access
+--   (e.g. buffer limits, invalid CLOB operations).
+--
+-- NOTES:
+--   - Log filtering is performed before formatting based on g_log_level.
+--   - Tag values are truncated to 60 characters.
+--   - CLOB logging is chunked and capped to avoid excessive output.
+
 
 FUNCTION xx_block_log_level_name(p_level IN PLS_INTEGER) RETURN VARCHAR2 IS
 BEGIN

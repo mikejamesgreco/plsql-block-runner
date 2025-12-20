@@ -1,4 +1,30 @@
--- XX_BLOCK_MAIN_PROCESS_CSV_1.sql
+-- MAIN: XX_BLOCK_MAIN_PROCESS_CSV_1.sql
+-- PURPOSE:
+--   Example MAIN that drives the CSV demo end-to-end:
+--     - resolve CSV directory/filename from optional inputs JSON (or defaults)
+--     - read the CSV file into global buffers
+--     - print the CSV contents/columns for inspection
+--     - return a small result JSON summary to the caller
+--
+-- IMPORTANT:
+--   This file is a MAIN *anonymous block snippet*.
+--   It is spliced directly into the worker’s outer BEGIN...END block.
+--   Do NOT define a procedure/function here.
+--   Nested DECLARE...BEGIN...END blocks are allowed (and used below).
+--
+-- INPUTS:
+--   l_inputs_json  CLOB  (provided by the driver; may be NULL/empty)
+--   Expected shape (optional):
+--     { "csv": { "dir": "<ORACLE_DIRECTORY>", "file": "<filename>" } }
+--
+-- OUTPUTS:
+--   l_result_json  CLOB  (set by MAIN; returned to caller via driver)
+--   :v_retcode     OUT NUMBER
+--     0 = success
+--     2 = MAIN error
+--   :v_errbuf      OUT VARCHAR2(4000)
+--     NULL on success; short message on failure
+--
 -- Contract expectations (provided by assembled worker):
 --   l_inputs_json  CLOB  (already set from :v_inputs_json)
 --   l_result_json  CLOB  (set by MAIN; driver copies to :v_result_json)
