@@ -55,7 +55,7 @@ MAIN=XX_BLOCK_MAIN_PROCESS_CSV_1.sql
 Rules:
 - Order matters
 - Exactly one `MAIN` block is required
-- Zero or one `DECL` block is allowed
+- Zero or many `DECL` blocks are allowed
 - One or more `BLOCK` entries are required
 
 ### Block Types

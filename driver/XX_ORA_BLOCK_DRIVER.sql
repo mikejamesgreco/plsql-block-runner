@@ -262,10 +262,10 @@ create or replace procedure xx_ora_block_driver(
     if regexp_like(l_base, '\.conf$', 'i') then
       l_base := regexp_replace(l_base, '\.conf$', '_WORKER.sql', 1, 1, 'i');
     else
-      l_base := l_base || '_WORKER.sql';
+      l_base := upper(l_base) || '_WORKER.sql';
     end if;
 
-    return l_base;
+    return trim(upper(l_base));
   end;
 
   procedure set_framework_result_json is
