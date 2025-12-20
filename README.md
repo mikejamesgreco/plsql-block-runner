@@ -188,13 +188,13 @@ See `contracts/RUNTIME_CONTRACT.md` for the full, versioned contract.
 
 ```sql
 declare
-  l_inputs clob := '{"csv":{"dir":"XXGEN_IT_SECURE","file":"sample.csv"}}';
+  l_inputs clob := '{"csv":{"dir":"XXG_DBADIR_SECURE","file":"sample.csv"}}';
   l_json   clob;
   l_rc     number;
   l_eb     varchar2(4000);
 begin
   xx_ora_block_driver(
-    p_blocks_dir  => 'XXGEN_IT_SECURE',
+    p_blocks_dir  => 'XX_DBADIR_SECURE',
     p_conf_file   => 'XX_BLOCK_TEMPLATE_PRINT_CSV_1.conf',
     p_inputs_json => l_inputs,
     x_retcode     => l_rc,
