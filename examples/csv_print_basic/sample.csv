@@ -1,0 +1,7 @@
+order_id,customer_name,ship_to_city,ship_to_state,amount,notes
+1001,Acme Corp,Detroit,MI,1250.75,Standard order
+1002,"Widgets, Inc.",Chicago,IL,987.50,"Rush delivery, customer called twice"
+1003,"O'Connor & Sons",Boston,MA,450.00,
+1004,"Smith ""The Hammer"" Tools",Cleveland,OH,3120.99,"Contains ""fragile"" items"
+1005,Global Manufacturing,Toronto,ON,775.25,"International shipment, customs required"
+1006,Local Shop,Grand Rapids,MI,89.99,"Small order"
