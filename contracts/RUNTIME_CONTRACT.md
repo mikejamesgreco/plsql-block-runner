@@ -3,6 +3,25 @@
 ## Driver API
 See README.md for signature.
 
+
+## Snippet Assembly (How the worker is built)
+
+The driver builds a single anonymous PL/SQL worker and splices files into it in this order:
+
+1. Framework declarations (driver-managed variables)
+2. `DECL=` snippets (in config order)
+3. `BLOCK=` snippets (in config order)
+4. `BEGIN`
+5. `MAIN=` snippet
+6. `END;`
+
+### Implications
+
+- Multiple `DECL=` lines are supported and are concatenated into the same outer `DECLARE` section.
+- `BLOCK=` files must be valid in a `DECLARE` section (procedures/functions; no anonymous blocks).
+- Only the `MAIN=` snippet executes automatically. If you want a `BLOCK=` routine to run, MAIN must call it.
+
+
 ## Bind Variables (Worker)
 - :v_inputs_json  IN  CLOB
 - :v_result_json  OUT CLOB

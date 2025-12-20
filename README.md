@@ -10,6 +10,102 @@ This project is designed for real-world Oracle environments, including EBS, Fusi
 
 ---
 
+
+## Block Types and Assembly Model
+
+This project treats each `.sql` file as a *snippet* that gets **spliced** into a generated worker (`*_WORKER.sql`) by the driver.
+
+The driver generates one anonymous PL/SQL block shaped like:
+
+```plsql
+DECLARE
+  -- framework vars (l_inputs_json, l_result_json, etc.)
+
+  -- DECL snippets (from DECL= lines, in order)
+
+  -- BLOCK snippets (from BLOCK= lines, in order)
+BEGIN
+  -- MAIN snippet (from MAIN= line)
+END;
+```
+
+That assembly model drives the rules below.
+
+### `DECL=` files (declarations only)
+
+`DECL=` snippets are inserted into the **outer `DECLARE` section**. For long-term sanity, keep them limited to:
+
+- types
+- constants
+- variables (shared “globals” for the worker, typically prefixed `g_`)
+
+Avoid putting procedure/function bodies in `DECL=` files (it *can* work in some cases, but it makes ordering fragile and harder to review).
+
+**Template:**
+
+```plsql
+/* XX_BLOCK_SOMETHING_DECL_1.sql
+   Purpose: shared state for ... 
+*/
+TYPE t_something IS RECORD (...);
+g_something t_something;
+```
+
+### `BLOCK=` files (procedures/functions only)
+
+`BLOCK=` snippets are also inserted into the **outer `DECLARE` section**, so they must be “declare-section friendly”.
+
+✅ Allowed:
+
+- `PROCEDURE ... IS/AS ... BEGIN ... END;`
+- `FUNCTION ... RETURN ... IS/AS ... BEGIN ... END;`
+
+❌ Not allowed at top-level of a `BLOCK=` snippet:
+
+- `DECLARE ... BEGIN ... END;` (anonymous blocks)
+- a bare `BEGIN ... END;`
+- free-floating executable statements outside a procedure/function
+
+**Template:**
+
+```plsql
+/* XX_BLOCK_THING_DO_1.sql
+   Defines: xx_block_thing_do
+   Depends on: XX_BLOCK_THING_DECL_1.sql
+*/
+PROCEDURE xx_block_thing_do IS
+BEGIN
+  -- work here
+END;
+```
+
+### `MAIN=` file (executed statements)
+
+`MAIN=` is inserted into the **outer `BEGIN ... END;`** and is what actually runs.
+
+- This is where you orchestrate calls to your `BLOCK=` procedures/functions.
+- A nested `DECLARE ... BEGIN ... END;` inside MAIN is fine (it’s just a nested statement block).
+
+**Template:**
+
+```plsql
+DECLARE
+  -- local vars for MAIN
+BEGIN
+  -- call block procedures in order
+  -- set :v_retcode, :v_errbuf, l_result_json
+END;
+```
+
+### Minimizing shared state
+
+Prefer passing state via local variables + parameters, but because snippets are spliced together,
+some shared state is unavoidable. When you need shared state:
+
+- declare it in a dedicated `*_DECL_*.sql` file
+- prefix worker-level shared variables with `g_`
+- keep “input” variables separate from “output” variables (e.g., `g_zip_entry_name` vs `g_zip_blob`)
+
 ## Why This Exists
 
 Oracle teams frequently struggle with:
