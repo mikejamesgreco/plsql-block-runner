@@ -111,7 +111,10 @@ create or replace procedure xx_ora_block_driver(
         when no_data_found then exit;
       end;
 
-      dbms_lob.writeappend(l_out, length(l_txt), l_txt);
+      --dbms_lob.writeappend(l_out, length(l_txt), l_txt);
+      if l_txt is not null then
+        dbms_lob.writeappend(l_out, length(l_txt), l_txt);
+      end if;      
       dbms_lob.writeappend(l_out, 1, c_nl);
     end loop;
 
