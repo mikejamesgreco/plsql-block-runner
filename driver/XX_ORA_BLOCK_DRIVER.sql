@@ -25,15 +25,11 @@ create or replace procedure xx_ora_block_driver(
   --   :v_result_json  OUT CLOB
   --
   -- Output parameters:
-  --   x_retcode     OUT NUMBER   : final retcode (from worker bind)
-  --   x_errbuf      OUT VARCHAR2 : final errbuf  (from worker bind)
-  --   x_result_json OUT CLOB     : MAIN result JSON if provided, otherwise
-  --                                framework summary JSON
+  --   x_retcode     OUT NUMBER
+  --   x_errbuf      OUT VARCHAR2
+  --   x_result_json OUT CLOB
   ---------------------------------------------------------------------------
 
-  ---------------------------------------------------------------------------
-  -- Constants / globals
-  ---------------------------------------------------------------------------
   c_nl              constant varchar2(1)   := chr(10);
   c_log_prefix      constant varchar2(30)  := 'DRIVER | ';
 
@@ -49,16 +45,14 @@ create or replace procedure xx_ora_block_driver(
 
   v_cursor          integer := null;
   v_status          integer;
+
   v_errbuf          varchar2(4000);
   v_retcode         number;
 
   -- MAIN result JSON captured via bind
   v_result_json     clob;
 
-  ---------------------------------------------------------------------------
-  -- Derived output file
-  ---------------------------------------------------------------------------
-  l_derived_file     varchar2(4000);
+  l_derived_file    varchar2(4000);
 
   ---------------------------------------------------------------------------
   -- Local helpers
@@ -73,7 +67,6 @@ create or replace procedure xx_ora_block_driver(
     );
   end;
 
-  -- minimal JSON string escaper for log/output
   function json_escape(p_text varchar2) return varchar2 is
     l_out varchar2(4000);
   begin
@@ -89,6 +82,18 @@ create or replace procedure xx_ora_block_driver(
     l_out := replace(l_out, chr(9),  '\t');
 
     return substr(l_out, 1, 4000);
+  end;
+
+  -- SAFE length check: avoids ORA-22275 if locator is invalid
+  function clob_len_safe(p_clob clob) return pls_integer is
+  begin
+    if p_clob is null then
+      return 0;
+    end if;
+    return dbms_lob.getlength(p_clob);
+  exception
+    when others then
+      return 0;
   end;
 
   function read_file_to_clob(p_dir varchar2, p_file varchar2) return clob is
@@ -293,9 +298,9 @@ create or replace procedure xx_ora_block_driver(
     x_errbuf  := v_errbuf;
 
     -- Prefer MAIN-produced JSON if present, otherwise framework JSON
-    if v_result_json is not null and dbms_lob.getlength(v_result_json) > 0 then
+    if clob_len_safe(v_result_json) > 0 then
       x_result_json := v_result_json;
-      log_driver('FINAL JSON (main) | len='||dbms_lob.getlength(x_result_json));
+      log_driver('FINAL JSON (main) | len='||clob_len_safe(x_result_json));
     else
       set_framework_result_json;
     end if;
@@ -468,7 +473,13 @@ begin
 
   v_retcode := null;
   v_errbuf  := null;
-  v_result_json := null;
+
+  -- IMPORTANT FIX:
+  -- Pre-initialize v_result_json to a valid temp CLOB locator so that:
+  --  - DBMS_SQL has a valid LOB bind buffer
+  --  - If MAIN doesn't assign :v_result_json, we still don't get ORA-22275
+  dbms_lob.createtemporary(v_result_json, true);
+  dbms_lob.trim(v_result_json, 0);
 
   log_driver('execute worker | via DBMS_SQL');
   v_cursor := dbms_sql.open_cursor;
@@ -482,12 +493,16 @@ begin
 
     -- inputs + result json
     dbms_sql.bind_variable(v_cursor, ':v_inputs_json', p_inputs_json);
+
+    -- bind OUT CLOB using the valid temp locator we created above
     dbms_sql.bind_variable(v_cursor, ':v_result_json', v_result_json);
 
     v_status := dbms_sql.execute(v_cursor);
 
     dbms_sql.variable_value(v_cursor, ':v_retcode', v_retcode);
     dbms_sql.variable_value(v_cursor, ':v_errbuf',  v_errbuf);
+
+    -- even if MAIN didn't set it, this won't be an invalid locator now
     dbms_sql.variable_value(v_cursor, ':v_result_json', v_result_json);
 
   exception
