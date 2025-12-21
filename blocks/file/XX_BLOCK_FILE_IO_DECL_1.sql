@@ -1,28 +1,26 @@
--- DECL: XX_BLOCK_FILE_IO_DECL_1.sql
+-- DECL: XX_BLOCK_FILE_IO_DECL_1
 -- PURPOSE:
---   Declare shared state for generic file I/O blocks that read text files
---   into memory as CLOBs. These globals are populated by file-read blocks
---   and consumed by downstream processing blocks (e.g. ZIP entry creation,
---   CSV parsing, content inspection).
+--   Shared file I/O global state for UTL_FILE helper blocks.
 --
 -- NOTES:
---   - This DECL contains only variable declarations and configuration knobs.
---     No executable logic, procedures, or functions should appear here.
---   - g_file_clob is expected to be managed as a temporary CLOB by file I/O
---     blocks; callers should not assume it is persistent across worker runs.
---   - g_file_bytes and g_file_lines are informational counters only and are
---     approximate (character-based, not physical byte counts).
---   - g_file_newline controls how line breaks are normalized when reading
---     files; default is LF (CHR(10)).
---   - g_file_max_lines is reserved for future use (0 = unlimited).
+--   - DECL files must contain declarations only (types/constants/variables).
+--   - No executable statements, procedures, or functions.
+--
+-- PROVIDES:
+--   g_file_dir, g_file_name, g_file_newline
+--   g_file_clob, g_file_blob
+--   g_file_lines, g_file_bytes
 
-g_file_dir       VARCHAR2(200);
-g_file_name      VARCHAR2(4000);
+  g_file_dir      VARCHAR2(200);
+  g_file_name     VARCHAR2(4000);
 
-g_file_clob      CLOB;
-g_file_bytes     PLS_INTEGER := 0;
-g_file_lines     PLS_INTEGER := 0;
+  -- newline appended for text reads (CLOB)
+  g_file_newline  VARCHAR2(2) := CHR(10);
 
--- Behavior knobs (can be overridden by JSON or other blocks later)
-g_file_newline   VARCHAR2(10) := CHR(10);  -- normalize line endings to LF
-g_file_max_lines PLS_INTEGER := 0;         -- 0 = unlimited
+  -- outputs
+  g_file_clob     CLOB;
+  g_file_blob     BLOB;
+
+  -- counters / metadata
+  g_file_lines    PLS_INTEGER := 0;
+  g_file_bytes    NUMBER      := 0;
