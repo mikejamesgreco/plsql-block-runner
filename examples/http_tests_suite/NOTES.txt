@@ -1,0 +1,11 @@
+HTTP Block Framework - Test Suite
+
+All tests use ONE config:
+  blocks.conf -> MAIN=XX_BLOCK_MAIN_HTTP_CALL_1.sql
+
+Run any test_*.sql after placing these files into your blocks directory.
+
+Notes:
+- httpbin.org is used for HTTP-only tests (no wallet needed).
+- HTTPS tests demonstrate failure without a wallet and success once a proper wallet is configured (placeholders included).
+- Basic/OAuth tests include CHANGE_ME placeholders; fill with real values.

@@ -1,6 +1,5 @@
 set serveroutput on size unlimited
 whenever sqlerror exit failure rollback
-set define off
 
 DECLARE
   l_inputs_json  CLOB;
@@ -12,48 +11,33 @@ DECLARE
   p_blocks_dir   VARCHAR2(200)  := 'XX_DBADIR_SECURE';
   p_conf_file    VARCHAR2(4000) := 'blocks.conf';
 
-  -- Request params (public echo service) (HTTP only, no cert required)
-  p_protocol     VARCHAR2(10)   := 'http';
-  p_host         VARCHAR2(4000) := 'httpbin.org';
-  p_port         NUMBER         := 80;
-  p_path         VARCHAR2(4000) := '/get';
-  p_verb         VARCHAR2(20)   := 'GET';
-
 BEGIN
-  -- URL params are the main point of this test.
-  -- This validates: JSON -> query-string build, escaping, and server echo.
-  l_inputs_json :=
-    '{'||
-    '  "request": {'||
-    '    "protocol": "'||p_protocol||'",'||
-    '    "host": "'||p_host||'",'||
-    '    "port": '||TO_CHAR(p_port)||','||
-    '    "path": "'||p_path||'",'||
-    '    "url": null,'||
-    '    "verb": "'||p_verb||'",'||
-    '    "url_params": {'||
-    '      "foo": "bar",'||
-    '      "hello": "world",'||
-    '      "answer": "42",'||
-    '      "space_test": "a b",'||
-    '      "symbols_test": "a&b=c?d"'||
-    '    },'||
-    '    "headers": {'||
-    '      "x-demo": "get-params-1"'||
-    '    },'||
-    '    "body_text": null,'||
-    '    "body_base64": null,'||
-    '    "content_type": null,'||
-    '    "resp_mode": "TEXT",'||
-    '    "timeout_seconds": 60'||
-    '  },'||
-    '  "auth": {'||
-    '    "type": "NONE",'||
-    '    "config": null,'||
-    '    "wallet_path": null,'||
-    '    "wallet_password": null'||
-    '  }'||
-    '}';
+  -- GET basic (http) to httpbin.org/get
+  l_inputs_json := q'~{
+  "request": {
+    "protocol": "http",
+    "host": "httpbin.org",
+    "port": 80,
+    "path": "/get",
+    "url": null,
+    "verb": "GET",
+    "url_params": null,
+    "headers": {
+      "x-demo": "get-basic-1"
+    },
+    "body_text": null,
+    "body_base64": null,
+    "content_type": null,
+    "resp_mode": "TEXT",
+    "timeout_seconds": 60
+  },
+  "auth": {
+    "type": "NONE",
+    "config": null,
+    "wallet_path": null,
+    "wallet_password": null
+  }
+}~';
 
   xx_ora_block_driver(
     p_blocks_dir   => p_blocks_dir,
