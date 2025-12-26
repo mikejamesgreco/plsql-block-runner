@@ -141,26 +141,6 @@ create or replace procedure xx_ora_block_driver(
     dbms_lob.writeappend(p_clob, 1, c_nl);
   end;
 
-  procedure print_clob(p_title varchar2, p_clob clob) is
-    l_len   pls_integer := nvl(dbms_lob.getlength(p_clob), 0);
-    l_off   pls_integer := 1;
-    l_take  pls_integer;
-    l_chunk varchar2(32767);
-  begin
-    dbms_output.put_line('============================================================');
-    dbms_output.put_line(p_title || ' (len='||l_len||')');
-    dbms_output.put_line('============================================================');
-
-    while l_off <= l_len loop
-      l_take  := least(32767, l_len - l_off + 1);
-      l_chunk := dbms_lob.substr(p_clob, l_take, l_off);
-      dbms_output.put_line(l_chunk);
-      l_off := l_off + l_take;
-    end loop;
-
-    dbms_output.put_line('============================================================');
-  end;
-
   function next_line(p_clob clob, p_pos in out pls_integer) return varchar2 is
     l_len pls_integer := dbms_lob.getlength(p_clob);
     l_nl  pls_integer;
@@ -183,6 +163,25 @@ create or replace procedure xx_ora_block_driver(
     return rtrim(l_out, chr(13));
   end;
 
+  procedure print_clob(p_title varchar2, p_clob clob) is
+    l_pos  pls_integer := 1;
+    l_line varchar2(32767);
+    l_len  pls_integer := nvl(dbms_lob.getlength(p_clob), 0);
+  begin
+    dbms_output.put_line('============================================================');
+    dbms_output.put_line(p_title || ' (len='||l_len||')');
+    dbms_output.put_line('============================================================');
+
+    -- IMPORTANT:
+    -- Do NOT exit when l_line is NULL because blank lines come back as '' which is NULL in PL/SQL.
+    while l_pos <= l_len loop
+      l_line := next_line(p_clob, l_pos);
+      dbms_output.put_line(nvl(l_line, '')); -- prints blank line when l_line is NULL
+    end loop;
+
+    dbms_output.put_line('============================================================');
+  end;
+  
   procedure append_file_indented(
     p_target in out nocopy clob,
     p_dir    in varchar2,
@@ -252,31 +251,48 @@ create or replace procedure xx_ora_block_driver(
     p_file in varchar2,
     p_clob in clob
   ) is
-    l_fh      utl_file.file_type;
-    l_len     pls_integer := nvl(dbms_lob.getlength(p_clob), 0);
-    l_off     pls_integer := 1;
-    l_take    pls_integer;
-    l_chunk   varchar2(32767);
-    l_written number := 0;
+    l_fh         utl_file.file_type;
+    l_len        pls_integer := nvl(dbms_lob.getlength(p_clob), 0);
+    l_off        pls_integer := 1;
+    l_take       pls_integer;
+    l_chunk      varchar2(32767);
+    l_raw        raw(32767);
+    l_written_b  number := 0;
+    l_iter       pls_integer := 0;
   begin
-    log_driver('writing derived worker file: dir='||p_dir||' file='||p_file||' len='||l_len);
+    log_driver('writing derived worker file (BINARY): dir='||p_dir||' file='||p_file||' chars='||l_len);
 
-    l_fh := utl_file.fopen(p_dir, p_file, 'W', 32767);
+    -- BINARY MODE avoids line-size truncation semantics
+    l_fh := utl_file.fopen(p_dir, p_file, 'WB', 32767);
 
     while l_off <= l_len loop
+      l_iter := l_iter + 1;
+
       l_take  := least(32767, l_len - l_off + 1);
       l_chunk := dbms_lob.substr(p_clob, l_take, l_off);
 
-      utl_file.put(l_fh, l_chunk);
+      -- NOTE: for your worker SQL this is fine (ASCII/DB charset text).
+      l_raw := utl_raw.cast_to_raw(l_chunk);
 
-      l_written := l_written + length(l_chunk);
+      utl_file.put_raw(l_fh, l_raw, true); -- true = autoflush
+      l_written_b := l_written_b + utl_raw.length(l_raw);
+
+      -- DEBUG (keep it cheap)
+      if l_iter <= 3 or l_off + l_take > l_len - 3 then
+        log_driver('WRITE DEBUG bin iter='||l_iter||
+                  ' off='||l_off||
+                  ' take='||l_take||
+                  ' chunk_chars='||length(l_chunk)||
+                  ' raw_bytes='||utl_raw.length(l_raw)||
+                  ' total_bytes='||l_written_b);
+      end if;
+
       l_off := l_off + l_take;
     end loop;
 
-    utl_file.new_line(l_fh);
     utl_file.fclose(l_fh);
 
-    log_driver('derived worker file write complete. chars_written='||l_written);
+    log_driver('derived worker file write complete. iters='||l_iter||' bytes_written='||l_written_b||' chars='||l_len);
 
   exception
     when others then
