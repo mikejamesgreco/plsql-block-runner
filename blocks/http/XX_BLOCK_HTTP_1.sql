@@ -601,6 +601,252 @@
     END LOOP;
   END;
 
+----------------------------------------------------------------------
+-- Multipart/form-data builder
+--
+-- Builds a multipart/form-data payload as a BLOB and returns the matching
+-- Content-Type value (including boundary).
+--
+-- INPUT JSON (p_parts_json):
+--   [
+--     {
+--       "name": "fieldName",                 -- required
+--       "filename": "file.bin",              -- optional (if present => file part)
+--       "content_type": "application/json",  -- optional
+--       "text": "string content",            -- optional (mutually exclusive with base64)
+--       "base64": "....",                    -- optional (mutually exclusive with text)
+--       "headers": { "X-Header":"v" }        -- optional additional per-part headers
+--     }, ...
+--   ]
+--
+-- NOTES:
+--   - Payload is built as a BLOB to safely combine headers + binary bytes.
+--   - Header lines and boundaries are ASCII; caller content is appended as:
+--       * text -> bytes via UTL_RAW.cast_to_raw (DB charset)
+--       * base64 -> decoded bytes
+----------------------------------------------------------------------
+FUNCTION xx_http_rand_boundary RETURN VARCHAR2 IS
+BEGIN
+  RETURN '----XX_BOUNDARY_' ||
+         TO_CHAR(SYSTIMESTAMP, 'YYYYMMDDHH24MISSFF3') ||
+         '_' ||
+         DBMS_RANDOM.string('x', 12);
+END;
+
+PROCEDURE xx_http_blob_append_text(p_blob IN OUT NOCOPY BLOB, p_text VARCHAR2) IS
+BEGIN
+  IF p_text IS NULL THEN
+    RETURN;
+  END IF;
+  xx_http_blob_append_raw(p_blob, UTL_RAW.cast_to_raw(p_text));
+END;
+
+FUNCTION xx_http_b64_to_blob(p_b64 CLOB) RETURN BLOB IS
+  l_clean CLOB;
+  l_pos   PLS_INTEGER := 1;
+  l_len   PLS_INTEGER;
+  l_chunk VARCHAR2(32767);
+  l_raw   RAW(32767);
+  l_out   BLOB;
+BEGIN
+  IF p_b64 IS NULL OR DBMS_LOB.getlength(p_b64) = 0 THEN
+    RETURN NULL;
+  END IF;
+
+  DBMS_LOB.createtemporary(l_out, TRUE);
+
+  -- strip whitespace/newlines
+  DBMS_LOB.createtemporary(l_clean, TRUE);
+  l_len := DBMS_LOB.getlength(p_b64);
+  WHILE l_pos <= l_len LOOP
+    l_chunk := DBMS_LOB.substr(p_b64, LEAST(32767, l_len - l_pos + 1), l_pos);
+    l_chunk := REPLACE(REPLACE(REPLACE(l_chunk, CHR(10), ''), CHR(13), ''), ' ', '');
+    DBMS_LOB.writeappend(l_clean, LENGTH(l_chunk), l_chunk);
+    l_pos := l_pos + 32767;
+  END LOOP;
+
+  l_pos := 1;
+  l_len := DBMS_LOB.getlength(l_clean);
+
+  -- decode in safe chunks (base64 decode wants multiples of 4; 32000 is usually fine)
+  WHILE l_pos <= l_len LOOP
+    l_chunk := DBMS_LOB.substr(l_clean, LEAST(32000, l_len - l_pos + 1), l_pos);
+    l_raw := UTL_ENCODE.base64_decode(UTL_RAW.cast_to_raw(l_chunk));
+    DBMS_LOB.writeappend(l_out, UTL_RAW.length(l_raw), l_raw);
+    l_pos := l_pos + 32000;
+  END LOOP;
+
+  RETURN l_out;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN NULL;
+END;
+
+PROCEDURE xx_http_build_multipart_form_data(
+  p_parts_json    IN  CLOB,
+  x_content_type  OUT VARCHAR2,
+  x_body_blob     OUT BLOB,
+  p_boundary      IN  VARCHAR2 DEFAULT NULL
+) IS
+  l_parts   JSON_ARRAY_T;
+  l_part    JSON_OBJECT_T;
+  l_headers JSON_OBJECT_T;
+
+  l_boundary VARCHAR2(200) := NVL(p_boundary, xx_http_rand_boundary);
+
+  l_name     VARCHAR2(4000);
+  l_filename VARCHAR2(4000);
+  l_p_ct     VARCHAR2(4000);
+  l_text     CLOB;
+  l_b64      CLOB;
+  l_bin      BLOB;
+
+  l_crlf     CONSTANT VARCHAR2(2) := CHR(13) || CHR(10);
+BEGIN
+  x_content_type := NULL;
+  x_body_blob := NULL;
+
+  IF p_parts_json IS NULL OR DBMS_LOB.getlength(p_parts_json) = 0 THEN
+    RAISE_APPLICATION_ERROR(-20001, 'xx_http_build_multipart_form_data: parts JSON is required');
+  END IF;
+
+  l_parts := JSON_ARRAY_T.parse(p_parts_json);
+
+  DBMS_LOB.createtemporary(x_body_blob, TRUE);
+
+  FOR i IN 0 .. l_parts.get_size - 1 LOOP
+    l_part := TREAT(l_parts.get(i) AS JSON_OBJECT_T);
+
+    l_name     := CASE WHEN l_part.has('name') THEN l_part.get_string('name') ELSE NULL END;
+    l_filename := CASE WHEN l_part.has('filename') THEN l_part.get_string('filename') ELSE NULL END;
+    l_p_ct     := CASE WHEN l_part.has('content_type') THEN l_part.get_string('content_type') ELSE NULL END;
+
+    IF l_name IS NULL THEN
+      RAISE_APPLICATION_ERROR(-20001, 'xx_http_build_multipart_form_data: part.name is required');
+    END IF;
+
+    -- Boundary line
+    xx_http_blob_append_text(x_body_blob, '--' || l_boundary || l_crlf);
+
+    -- Content-Disposition
+    IF l_filename IS NOT NULL THEN
+      xx_http_blob_append_text(
+        x_body_blob,
+        'Content-Disposition: form-data; name="' || l_name || '"; filename="' || l_filename || '"' || l_crlf
+      );
+    ELSE
+      xx_http_blob_append_text(
+        x_body_blob,
+        'Content-Disposition: form-data; name="' || l_name || '"' || l_crlf
+      );
+    END IF;
+
+    -- Content-Type (optional)
+    IF l_p_ct IS NULL THEN
+      l_p_ct := CASE
+                  WHEN l_filename IS NOT NULL THEN 'application/octet-stream'
+                  ELSE 'text/plain'
+                END;
+    END IF;
+    xx_http_blob_append_text(x_body_blob, 'Content-Type: ' || l_p_ct || l_crlf);
+
+    -- Extra headers (optional)
+    BEGIN
+      IF l_part.has('headers') THEN
+        l_headers := TREAT(l_part.get('headers') AS JSON_OBJECT_T);
+        DECLARE
+          l_keys JSON_KEY_LIST;
+          l_k    VARCHAR2(256);
+          l_v    VARCHAR2(4000);
+        BEGIN
+          l_keys := l_headers.get_keys;
+          FOR k IN 1 .. l_keys.count LOOP
+            l_k := l_keys(k);
+            BEGIN
+              l_v := l_headers.get_string(l_k);
+            EXCEPTION
+              WHEN OTHERS THEN
+                l_v := l_headers.get(l_k).to_string;
+            END;
+            xx_http_blob_append_text(x_body_blob, l_k || ': ' || NVL(l_v,'') || l_crlf);
+          END LOOP;
+        END;
+      END IF;
+    EXCEPTION
+      WHEN OTHERS THEN
+        NULL;
+    END;
+
+    -- End headers
+    xx_http_blob_append_text(x_body_blob, l_crlf);
+
+    -- Content (text or base64)
+    l_text := NULL;
+    l_b64  := NULL;
+
+    BEGIN
+      IF l_part.has('text') THEN
+        l_text := l_part.get('text').to_clob;
+      END IF;
+    EXCEPTION
+      WHEN OTHERS THEN
+        l_text := NULL;
+    END;
+
+    BEGIN
+      IF l_part.has('base64') THEN
+        l_b64 := l_part.get('base64').to_clob;
+      END IF;
+    EXCEPTION
+      WHEN OTHERS THEN
+        l_b64 := NULL;
+    END;
+
+    IF l_b64 IS NOT NULL AND DBMS_LOB.getlength(l_b64) > 0 THEN
+      l_bin := xx_http_b64_to_blob(l_b64);
+      IF l_bin IS NOT NULL THEN
+        -- append bytes
+        DECLARE
+          l_pos  PLS_INTEGER := 1;
+          l_len  PLS_INTEGER := DBMS_LOB.getlength(l_bin);
+          l_take PLS_INTEGER;
+          l_raw  RAW(32767);
+        BEGIN
+          WHILE l_pos <= l_len LOOP
+            l_take := LEAST(32767, l_len - l_pos + 1);
+            l_raw := DBMS_LOB.substr(l_bin, l_take, l_pos);
+            xx_http_blob_append_raw(x_body_blob, l_raw);
+            l_pos := l_pos + l_take;
+          END LOOP;
+        END;
+      END IF;
+    ELSIF l_text IS NOT NULL AND DBMS_LOB.getlength(l_text) > 0 THEN
+      -- append as bytes; write in chunks
+      DECLARE
+        l_pos   PLS_INTEGER := 1;
+        l_len   PLS_INTEGER := DBMS_LOB.getlength(l_text);
+        l_take  PLS_INTEGER;
+        l_chunk VARCHAR2(32767);
+      BEGIN
+        WHILE l_pos <= l_len LOOP
+          l_take := LEAST(32767, l_len - l_pos + 1);
+          l_chunk := DBMS_LOB.substr(l_text, l_take, l_pos);
+          xx_http_blob_append_text(x_body_blob, l_chunk);
+          l_pos := l_pos + l_take;
+        END LOOP;
+      END;
+    END IF;
+
+    -- Part terminator
+    xx_http_blob_append_text(x_body_blob, l_crlf);
+  END LOOP;
+
+  -- Closing boundary
+  xx_http_blob_append_text(x_body_blob, '--' || l_boundary || '--' || l_crlf);
+
+  x_content_type := 'multipart/form-data; boundary=' || l_boundary;
+END;
+
   ----------------------------------------------------------------------
   -- main procedure
   ----------------------------------------------------------------------

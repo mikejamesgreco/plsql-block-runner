@@ -189,32 +189,60 @@ create or replace procedure xx_ora_block_driver(
     p_file   in varchar2,
     p_indent in varchar2
   ) is
-    l_src    clob;
-    l_len    pls_integer;
-    l_off    pls_integer := 1;
-    l_take   pls_integer;
-    l_chunk  varchar2(32767);
+    l_src      clob;
+    l_len      pls_integer;
+    l_pos      pls_integer := 1;
+    l_nl_pos   pls_integer;
+    l_seg_len  pls_integer;
+    l_take     pls_integer;
+    l_chunk    varchar2(32767);
   begin
     l_src := read_file_to_clob(p_dir, p_file);
     l_len := nvl(dbms_lob.getlength(l_src), 0);
 
     log_driver('loaded file='||p_file||' len='||l_len);
 
-    if p_indent is not null then
-      dbms_lob.writeappend(p_target, length(p_indent), p_indent);
+    if p_indent is null then
+      -- original fast path: append as-is in 32k chunks
+      while l_pos <= l_len loop
+        l_take  := least(32767, l_len - l_pos + 1);
+        l_chunk := dbms_lob.substr(l_src, l_take, l_pos);
+        dbms_lob.writeappend(p_target, length(l_chunk), l_chunk);
+        l_pos := l_pos + l_take;
+      end loop;
+
+    else
+      -- safe path: indent per line without expanding a 32k VARCHAR2
+      while l_pos <= l_len loop
+        -- find next newline (LF). c_nl is LF in your driver.
+        l_nl_pos := dbms_lob.instr(l_src, c_nl, l_pos);
+
+        if l_nl_pos = 0 then
+          -- last line (no trailing newline)
+          l_seg_len := l_len - l_pos + 1;
+        else
+          -- include the newline char
+          l_seg_len := l_nl_pos - l_pos + 1;
+        end if;
+
+        -- write indent
+        dbms_lob.writeappend(p_target, length(p_indent), p_indent);
+
+        -- write the line segment in 32k chunks (handles very long lines)
+        declare
+          l_off pls_integer := 0;
+        begin
+          while l_off < l_seg_len loop
+            l_take  := least(32767, l_seg_len - l_off);
+            l_chunk := dbms_lob.substr(l_src, l_take, l_pos + l_off);
+            dbms_lob.writeappend(p_target, length(l_chunk), l_chunk);
+            l_off := l_off + l_take;
+          end loop;
+        end;
+
+        l_pos := l_pos + l_seg_len;
+      end loop;
     end if;
-
-    while l_off <= l_len loop
-      l_take  := least(32767, l_len - l_off + 1);
-      l_chunk := dbms_lob.substr(l_src, l_take, l_off);
-
-      if p_indent is not null then
-        l_chunk := replace(l_chunk, c_nl, c_nl || p_indent);
-      end if;
-
-      dbms_lob.writeappend(p_target, length(l_chunk), l_chunk);
-      l_off := l_off + l_take;
-    end loop;
 
     dbms_lob.writeappend(p_target, 1, c_nl);
   end;

@@ -1,9 +1,15 @@
 -- MAIN: XX_BLOCK_MAIN_HTTP_CALL_1.sql
 -- PURPOSE:
---   Example MAIN that performs a single REST call using xx_http_call
---   (from XX_BLOCK_HTTP_1.sql).
+--   Generic MAIN that performs a single HTTP / HTTPS REST call using
+--   xx_http_call (from XX_BLOCK_HTTP_1.sql).
 --
--- EXPECTED INPUT JSON (example):
+--   Supports:
+--     - Standard REST calls (GET / POST / PUT / DELETE / PATCH)
+--     - Text bodies (CLOB)
+--     - Binary bodies (Base64 → BLOB)
+--     - Multipart/form-data requests (optional, backward-compatible)
+--
+-- EXPECTED INPUT JSON (standard request example):
 -- {
 --   "request": {
 --     "protocol": "https",
@@ -27,6 +33,59 @@
 --     "wallet_password": null
 --   }
 -- }
+--
+-- OPTIONAL MULTIPART REQUEST FORMAT (multipart/form-data):
+--
+-- If "multipart" is supplied, MAIN will:
+--   - Build a multipart/form-data payload
+--   - Generate a boundary automatically
+--   - Send the request body as BLOB
+--   - Set Content-Type to multipart/form-data with boundary
+--
+-- Existing fields (body_text / body_base64) are ignored when multipart is used.
+--
+-- {
+--   "request": {
+--     "protocol": "https",
+--     "host": "postman-echo.com",
+--     "port": 443,
+--     "path": "/post",
+--     "verb": "POST",
+--     "headers": { "x-demo":"1" },
+--     "resp_mode": "TEXT",
+--     "timeout_seconds": 60,
+--
+--     "multipart": {
+--       "parts": [
+--         {
+--           "name": "metadata",
+--           "content_type": "application/json",
+--           "text": "{ \"id\": 123, \"type\": \"demo\" }"
+--         },
+--         {
+--           "name": "file",
+--           "filename": "example.txt",
+--           "content_type": "text/plain",
+--           "base64": "SGVsbG8gV29ybGQK"
+--         }
+--       ]
+--     }
+--   },
+--   "auth": {
+--     "type": "NONE",
+--     "config": null,
+--     "wallet_path": null,
+--     "wallet_password": null
+--   }
+-- }
+--
+-- NOTES:
+--   - Multipart support is optional and fully backward-compatible.
+--   - Only one request body mode is used per call:
+--       * multipart
+--       * OR body_text
+--       * OR body_base64
+--   - Multipart payloads are constructed as BLOBs for binary safety.
 
 DECLARE
   l_in_root      JSON_OBJECT_T;
@@ -46,6 +105,9 @@ DECLARE
   l_body_text    CLOB;
   l_body_b64     CLOB;
   l_body_blob    BLOB;
+
+  l_multipart_parts_json CLOB;
+  l_multipart_boundary   VARCHAR2(4000);
 
   l_content_type VARCHAR2(4000);
   l_resp_mode    VARCHAR2(20);
@@ -140,11 +202,28 @@ BEGIN
   l_url_params_json := elem_to_clob(l_req_obj.get('url_params'));
   l_headers_json    := elem_to_clob(l_req_obj.get('headers'));
 
-      l_body_text := elem_to_clob(l_req_obj.get('body_text'));
-  l_body_b64  := elem_to_clob(l_req_obj.get('body_base64'));
-  l_body_blob := b64_to_blob(l_body_b64);
+  l_multipart_parts_json := elem_to_clob(l_req_obj.get('multipart_parts'));
+  l_multipart_boundary   := CASE WHEN l_req_obj.has('multipart_boundary') THEN l_req_obj.get_string('multipart_boundary') ELSE NULL END;
 
-  l_content_type := CASE WHEN l_req_obj.has('content_type') THEN l_req_obj.get_string('content_type') ELSE NULL END;
+  IF l_multipart_parts_json IS NOT NULL AND DBMS_LOB.getlength(l_multipart_parts_json) > 0 THEN
+    -- Build multipart/form-data payload using HTTP block helper
+    xx_http_build_multipart_form_data(
+      p_parts_json   => l_multipart_parts_json,
+      x_content_type => l_content_type,
+      x_body_blob    => l_body_blob,
+      p_boundary     => l_multipart_boundary
+    );
+    l_body_text := NULL;
+    l_body_b64  := NULL;
+  ELSE
+    l_body_text := elem_to_clob(l_req_obj.get('body_text'));
+    l_body_b64  := elem_to_clob(l_req_obj.get('body_base64'));
+    l_body_blob := b64_to_blob(l_body_b64);
+  END IF;
+
+  IF l_content_type IS NULL THEN
+    l_content_type := CASE WHEN l_req_obj.has('content_type') THEN l_req_obj.get_string('content_type') ELSE NULL END;
+  END IF;
   l_resp_mode    := NVL(CASE WHEN l_req_obj.has('resp_mode') THEN l_req_obj.get_string('resp_mode') ELSE NULL END, 'TEXT');
   l_timeout      := NVL(CASE WHEN l_req_obj.has('timeout_seconds') THEN l_req_obj.get_number('timeout_seconds') ELSE NULL END, 60);
 
