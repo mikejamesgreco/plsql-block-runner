@@ -1,0 +1,10 @@
+NOTES.txt
+
+This test suite demonstrates the SQL Stats / Explain Plan block.
+
+- Test files call xx_ora_block_driver with blocks.conf in this directory.
+- The MAIN reads inputs_json with:
+    - sql_stats: options for top_n, include_list, explain_sql, cursor_sql_id, cursor_child, xplan_format
+    - run: { plsql: "BEGIN ... END;" } optional snippet to execute under measurement
+
+If V$ views are not accessible to the running schema, stats_delta.supported will be false.
